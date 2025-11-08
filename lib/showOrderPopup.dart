@@ -1,15 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'config/api_config.dart';
+import 'package:http/http.dart' as http;
 
+// Replace with your actual API config
+class ApiConfig {
+  static Future<String> getBaseUrl() async {
+    // Replace with your actual logic
+    return "https://yourapi.com";
+  }
+}
+
+// --- Addons Model ---
 class Addons {
   final Map<String, double> sizes;
   final Map<String, double> crusts;
   final Map<String, double> dips;
   final Map<String, double> stuffed;
-  final Map<String, double> toppings; // <-- renamed here
+  final Map<String, double> toppings;
   final Map<String, Map<String, double>> pastaAddons;
   final Map<String, Map<String, double>> riceAddons;
 
@@ -18,23 +27,19 @@ class Addons {
     required this.crusts,
     required this.dips,
     required this.stuffed,
-    required this.toppings, // <-- renamed here
+    required this.toppings,
     required this.pastaAddons,
     required this.riceAddons,
   });
 
   factory Addons.fromJson(Map<String, dynamic> json) {
     Map<String, double> toMap(dynamic input) {
-      if (input is Map) {
-        return input.map((k, v) => MapEntry(k.toString(), (v as num).toDouble()));
-      }
+      if (input is Map) return input.map((k, v) => MapEntry(k.toString(), (v as num).toDouble()));
       return {};
     }
 
     Map<String, Map<String, double>> toNestedMap(dynamic input) {
-      if (input is Map) {
-        return input.map((k, v) => MapEntry(k.toString(), toMap(v)));
-      }
+      if (input is Map) return input.map((k, v) => MapEntry(k.toString(), toMap(v)));
       return {};
     }
 
@@ -43,14 +48,14 @@ class Addons {
       crusts: toMap(json['crusts']),
       dips: toMap(json['dips']),
       stuffed: toMap(json['stuffed']),
-      toppings: toMap(json['toppings']), // <-- renamed here
+      toppings: toMap(json['toppings']),
       pastaAddons: toNestedMap(json['pastaAddons']),
       riceAddons: toNestedMap(json['riceAddons']),
     );
   }
 }
 
-// --- Fetch Addons from API ---
+// --- Fetch Addons ---
 Future<Addons> fetchAddons() async {
   final apiBase = await ApiConfig.getBaseUrl();
   final url = '$apiBase/addons/get_addons.php';
@@ -64,7 +69,143 @@ Future<Addons> fetchAddons() async {
   }
 }
 
-// --- Show Order Popup ---
+// --- Fetch menu ingredients for inventory deduction ---
+Future<List<Map<String, dynamic>>> fetchMenuIngredients(String apiBase, int menuId) async {
+  try {
+    final res = await http.get(
+      Uri.parse("$apiBase/menu/get_menu_ingredients.php?menu_id=$menuId"),
+      headers: {'Content-Type': 'application/json'},
+    );
+    final data = jsonDecode(res.body);
+    if (data['success'] == true) {
+      return List<Map<String, dynamic>>.from(data['data']);
+    }
+    return [];
+  } catch (e) {
+    print("Error fetching ingredients: $e");
+    return [];
+  }
+}
+
+// --- Deduct main ingredients ---
+Future<Map<String, dynamic>> deductMainIngredients(
+  String apiBase,
+  List<Map<String, dynamic>> deductions,
+) async {
+  if (deductions.isEmpty) return {'success': false, 'message': 'No main ingredients to deduct'};
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getString('user_id');
+
+    if (userId == null) return {'success': false, 'message': 'User ID not found'};
+
+    final res = await http.post(
+      Uri.parse("$apiBase/inventory/deduct_main_ingredients.php"),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({
+        'items': deductions,
+        'user_id': userId,
+        'reason': 'Checkout deduction (main ingredients)',
+      }),
+    );
+
+    return jsonDecode(res.body);
+  } catch (e) {
+    return {'success': false, 'message': e.toString()};
+  }
+}
+
+// --- Cart helper ---
+void addToCart({
+  required List<Map<String, dynamic>> cartItems,
+  required String name,
+  required double price,
+  required int quantity,
+  String? size,
+  String? crust,
+  String? stuffed,
+  List<String>? dips,
+  List<dynamic>? addons,
+  String? category,
+  int? menuId,
+}) {
+  cartItems.add({
+    'name': name,
+    'price': price,
+    'quantity': quantity,
+    'size': size,
+    'crust': crust,
+    'stuffed': stuffed,
+    'dips': dips ?? [],
+    'addons': addons ?? [],
+    'category': category ?? 'Pizza',
+    'menu_id': menuId ?? 0,
+  });
+}
+
+// --- Compute ingredient deduction ---
+Map<String, double> computeIngredientDeduction(
+  Map<String, dynamic> item, {
+  String? size,
+  String? crust,
+  String? stuffed,
+  List<String>? addons,
+  Addons? allAddons,
+}) {
+  final Map<String, double> deduction = {};
+  final type = (item['type'] ?? item['category']?.toString().toLowerCase() ?? 'pizza').toString().toLowerCase();
+
+  // Pizza base ingredients
+  if (type == 'pizza') {
+    deduction['Dough'] = 1.0;
+    deduction['Cheese'] = 50.0;
+    deduction['Tomato Sauce'] = 30.0;
+
+    if (size != null) {
+      double multiplier = 1.0;
+      switch (size) {
+        case 'Small': multiplier = 0.9; break;
+        case 'Medium': multiplier = 1.0; break;
+        case 'Large': multiplier = 1.3; break;
+        case 'Extra Large': multiplier = 1.6; break;
+      }
+      deduction.update('Dough', (v) => v * multiplier);
+      deduction.update('Cheese', (v) => v * multiplier);
+      deduction.update('Tomato Sauce', (v) => v * multiplier);
+    }
+
+    if (crust == 'Thick') deduction.update('Dough', (v) => v * 1.2);
+    if (stuffed == 'Cheese burst') deduction['Cheese'] = (deduction['Cheese'] ?? 0) + 50.0;
+  }
+
+  // Pasta
+  if (type == 'pasta') {
+    deduction['Tomato Sauce'] = 30.0;
+    deduction['Olive Oil'] = 10.0;
+  }
+
+  // Rice
+  if (type == 'rice') {
+    deduction['Rice'] = 100.0;
+    deduction['Soy Sauce'] = 10.0;
+  }
+
+  // Addons
+  if (addons != null && allAddons != null) {
+    Map<String, double> addonPrices = {};
+    if (type == 'pizza') addonPrices = allAddons.toppings;
+    if (type == 'pasta') allAddons.pastaAddons.forEach((_, map) => addonPrices.addAll(map));
+    if (type == 'rice') allAddons.riceAddons.forEach((_, map) => addonPrices.addAll(map));
+
+    for (var addon in addons) {
+      if (addonPrices.containsKey(addon)) deduction[addon] = (deduction[addon] ?? 0) + addonPrices[addon]!;
+    }
+  }
+
+  return deduction;
+}
+
+// --- Show order popup ---
 void showOrderPopup(
   BuildContext context,
   Map<String, dynamic> item,
@@ -86,7 +227,6 @@ void showOrderPopup(
 
   String type = (item['type'] ?? item['category']?.toString().toLowerCase() ?? 'pizza').toString().toLowerCase();
 
-  // --- Selected Options ---
   String selectedSize = addons.sizes.containsKey("Medium") ? "Medium" : addons.sizes.keys.firstOrNull ?? '';
   String selectedCrust = addons.crusts.keys.firstOrNull ?? '';
   String selectedDip = addons.dips.keys.firstOrNull ?? '';
@@ -104,13 +244,14 @@ void showOrderPopup(
 
   double computeTotal() {
     double total = basePrice;
+
     if (type == 'pizza') {
       total *= addons.sizes[selectedSize] ?? 1.0;
       total += addons.crusts[selectedCrust] ?? 0.0;
       total += addons.dips[selectedDip] ?? 0.0;
       total += addons.stuffed[selectedStuffed] ?? 0.0;
       for (var addon in selectedPizzaAddons) {
-        total += addons.toppings[addon] ?? 0.0; // <-- renamed here
+        total += addons.toppings[addon] ?? 0.0;
       }
     } else {
       final selected = type == 'pasta' ? selectedPastaAddons : selectedRiceAddons;
@@ -146,16 +287,14 @@ void showOrderPopup(
                     style: GoogleFonts.poppins(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500)),
                 SizedBox(height: 12),
 
-                // --- Pizza Options ---
                 if (type == 'pizza') ...[
                   _buildRadioSection("Sizes", addons.sizes, selectedSize, (val) => setState(() => selectedSize = val)),
                   _buildRadioSection("Crust Type", addons.crusts, selectedCrust, (val) => setState(() => selectedCrust = val)),
                   _buildRadioSection("Side Dips", addons.dips, selectedDip, (val) => setState(() => selectedDip = val)),
                   _buildRadioSection("Stuffed Crust Option", addons.stuffed, selectedStuffed, (val) => setState(() => selectedStuffed = val)),
-                  _buildCheckboxSection("Toppings", addons.toppings, selectedPizzaAddons, setState), // <-- renamed here
+                  _buildCheckboxSection("Toppings", addons.toppings, selectedPizzaAddons, setState),
                 ],
 
-                // --- Pasta / Rice Options ---
                 if (type == 'pasta' || type == 'rice') ...[
                   ...getCurrentAddons().entries.map((category) {
                     final selected = type == 'pasta' ? selectedPastaAddons : selectedRiceAddons;
@@ -186,11 +325,14 @@ void showOrderPopup(
               onPressed: () {
                 Navigator.pop(context);
 
-                final selectedAddons = type == 'pizza'
-                    ? selectedPizzaAddons
-                    : type == 'pasta'
-                        ? selectedPastaAddons
-                        : selectedRiceAddons;
+                List<Map<String, double>> finalAddons = [];
+                if (type == 'pizza') {
+                  finalAddons = selectedPizzaAddons.map((e) => {e: addons.toppings[e] ?? 0.0}).toList();
+                } else if (type == 'pasta') {
+                  finalAddons = selectedPastaAddons.map((e) => {e: getCurrentAddons().values.first[e] ?? 0.0}).toList();
+                } else if (type == 'rice') {
+                  finalAddons = selectedRiceAddons.map((e) => {e: getCurrentAddons().values.first[e] ?? 0.0}).toList();
+                }
 
                 final cartItem = {
                   'menu_id': item['id'],
@@ -199,13 +341,18 @@ void showOrderPopup(
                   'quantity': 1,
                   'category': type[0].toUpperCase() + type.substring(1),
                   'size': type == 'pizza' ? selectedSize : null,
-                  'addons': selectedAddons,
+                  'crust': type == 'pizza' ? selectedCrust : null,
+                  'stuffed': type == 'pizza' ? selectedStuffed : null,
+                  'dips': type == 'pizza' ? [selectedDip] : null,
+                  'addons': finalAddons,
                   'deduction': computeIngredientDeduction(
                     item,
                     size: selectedSize,
                     crust: selectedCrust,
                     stuffed: selectedStuffed,
-                    addons: selectedAddons,
+                    addons: type == 'pizza'
+                        ? selectedPizzaAddons
+                        : (type == 'pasta' ? selectedPastaAddons : selectedRiceAddons),
                     allAddons: addons,
                   ),
                 };
@@ -228,10 +375,7 @@ void showOrderPopup(
   );
 }
 
-// --- Helper Widgets and Deduction logic remain the same ---
-
-
-// --- Helper: Radio Section ---
+// --- Helper Widgets ---
 Widget _buildRadioSection(String title, Map<String, double> options, String groupValue, ValueChanged<String> onChanged) {
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -254,7 +398,6 @@ Widget _buildRadioSection(String title, Map<String, double> options, String grou
   );
 }
 
-// --- Helper: Checkbox Section ---
 Widget _buildCheckboxSection(String title, Map<String, double> options, List<String> selected, StateSetter setState) {
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -280,79 +423,7 @@ Widget _buildCheckboxSection(String title, Map<String, double> options, List<Str
   );
 }
 
-// --- Dynamic Deduction ---
-Map<String, double> computeIngredientDeduction(
-  Map<String, dynamic> item, {
-  String? size,
-  String? crust,
-  String? stuffed,
-  List<String>? addons,
-  Addons? allAddons,
-}) {
-  final Map<String, double> deduction = {};
-  final type = (item['type'] ?? item['category']?.toString().toLowerCase() ?? 'pizza').toString().toLowerCase();
-
-  // Base ingredients
-  if (type == 'pizza') {
-    deduction['Dough'] = 1.0;
-    deduction['Cheese'] = 50.0;
-    deduction['Tomato Sauce'] = 30.0;
-
-    if (size != null) {
-      double multiplier = 1.0;
-      switch (size) {
-        case 'Small':
-          multiplier = 0.9;
-          break;
-        case 'Medium':
-          multiplier = 1.0;
-          break;
-        case 'Large':
-          multiplier = 1.3;
-          break;
-        case 'Extra Large':
-          multiplier = 1.6;
-          break;
-      }
-      deduction.update('Dough', (v) => v * multiplier);
-      deduction.update('Cheese', (v) => v * multiplier);
-      deduction.update('Tomato Sauce', (v) => v * multiplier);
-    }
-
-    if (crust == 'Thick') deduction.update('Dough', (v) => v * 1.2);
-    if (stuffed == 'Cheese burst') deduction['Cheese'] = (deduction['Cheese'] ?? 0) + 50.0;
-  }
-
-  if (type == 'pasta') {
-    deduction['Tomato Sauce'] = 30.0;
-    deduction['Olive Oil'] = 10.0;
-  }
-
-  if (type == 'rice') {
-    deduction['Rice'] = 100.0;
-    deduction['Soy Sauce'] = 10.0;
-  }
-
-  // Addons deduction dynamically
-  if (addons != null && allAddons != null) {
-    Map<String, double> addonPrices = {};
-
-    if (type == 'pizza') addonPrices = allAddons.toppings;
-    if (type == 'pasta') allAddons.pastaAddons.forEach((_, map) => addonPrices.addAll(map));
-    if (type == 'rice') allAddons.riceAddons.forEach((_, map) => addonPrices.addAll(map));
-
-    for (var addon in addons) {
-      if (addonPrices.containsKey(addon)) {
-        double amount = (addonPrices[addon]! / 10).ceilToDouble(); // 1 unit per 10 pesos
-        deduction[addon] = (deduction[addon] ?? 0) + amount;
-      }
-    }
-  }
-
-  return deduction;
-}
-
-// Extension: firstOrNull helper
+// --- Extension ---
 extension FirstOrNull<K> on Iterable<K> {
   K? get firstOrNull => isEmpty ? null : first;
 }

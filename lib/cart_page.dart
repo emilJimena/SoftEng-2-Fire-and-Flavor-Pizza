@@ -59,6 +59,33 @@ Future<Map<String, dynamic>> deductMainIngredients(
   }
 }
 
+void addToCart({
+  required List<Map<String, dynamic>> cartItems,
+  required String name,
+  required double price,
+  required int quantity,
+  String? size,
+  String? crust,
+  String? stuffed,
+  List<String>? dips,
+  List<dynamic>? addons, // Can be String or Map<String, dynamic>
+  String? category,
+  int? menuId,
+}) {
+  cartItems.add({
+    'name': name,
+    'price': price,
+    'quantity': quantity,
+    'size': size,
+    'crust': crust,
+    'stuffed': stuffed,
+    'dips': dips ?? [],
+    'addons': addons ?? [],
+    'category': category ?? 'Pizza',
+    'menu_id': menuId ?? 0,
+  });
+}
+
 class CartPage extends StatefulWidget {
   final List<Map<String, dynamic>> cartItems;
   final List rawMaterials;
