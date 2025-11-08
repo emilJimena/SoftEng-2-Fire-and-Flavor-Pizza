@@ -36,8 +36,6 @@ class _MenuManagementPageState extends State<MenuManagementPage> {
 
   List menuItems = [];
   List rawMaterials = [];
-  List<Map> selectedMenuIngredients = [];
-  int? selectedMenuId;
   List<Map<String, dynamic>> cartItems = [];
 
   @override
@@ -46,16 +44,11 @@ class _MenuManagementPageState extends State<MenuManagementPage> {
     _setApiBase();
   }
 
-  void onViewIngredients(int menuId) {
-    fetchMenuIngredients(menuId);
-  }
-
   void addToCart(Map menuItem, {String? size, int quantity = 1}) {
-    // Ensure each main ingredient has a name and quantity
-    List<Map<String, dynamic>>
-    mainIngredients = (menuItem['mainIngredients'] ?? []).map((ing) {
+    List<Map<String, dynamic>> mainIngredients =
+        (menuItem['mainIngredients'] ?? []).map((ing) {
       return {
-        'id': ing['id'] ?? ing['raw_material_id'], // <--- make sure this exists
+        'id': ing['id'] ?? ing['raw_material_id'],
         'name': ing['name'],
         'quantity': double.tryParse(ing['quantity'].toString()) ?? 0,
       };
@@ -68,7 +61,7 @@ class _MenuManagementPageState extends State<MenuManagementPage> {
       'quantity': quantity,
       'size': size,
       'mainIngredients': mainIngredients,
-      'deduction': menuItem['deduction'] ?? {}, // keep add-ons logic intact
+      'deduction': menuItem['deduction'] ?? {},
       'category': menuItem['category'],
     };
 
@@ -78,9 +71,8 @@ class _MenuManagementPageState extends State<MenuManagementPage> {
 
   Future<void> fetchRawMaterials() async {
     try {
-      final response = await http.get(
-        Uri.parse("$apiBase/menu/get_raw_materials.php"),
-      );
+      final response =
+          await http.get(Uri.parse("$apiBase/menu/get_raw_materials.php"));
       final data = jsonDecode(response.body);
       if (data['success']) {
         setState(() => rawMaterials = data['data']);
@@ -95,9 +87,8 @@ class _MenuManagementPageState extends State<MenuManagementPage> {
   Future<void> fetchMenuItems() async {
     setState(() => isLoading = true);
     try {
-      final response = await http.get(
-        Uri.parse("$apiBase/menu/get_menu_items.php"),
-      );
+      final response =
+          await http.get(Uri.parse("$apiBase/menu/get_menu_items.php"));
       final data = jsonDecode(response.body);
       if (data['success']) {
         setState(() => menuItems = data['data']);
@@ -110,23 +101,135 @@ class _MenuManagementPageState extends State<MenuManagementPage> {
     setState(() => isLoading = false);
   }
 
-  Future<void> fetchMenuIngredients(int menuId) async {
+  Future<void> onViewIngredientsAndShow(int menuId) async {
     try {
-      final response = await http.get(
-        Uri.parse("$apiBase/menu/get_menu_ingredients.php?menu_id=$menuId"),
-      );
+      final response = await http
+          .get(Uri.parse("$apiBase/menu/get_menu_ingredients.php?menu_id=$menuId"));
       final data = jsonDecode(response.body);
       if (data['success']) {
-        setState(() {
-          selectedMenuIngredients = List<Map>.from(data['data']);
-          selectedMenuId = menuId;
-        });
+        List<Map> ingredients = List<Map>.from(data['data']);
+        _showIngredientsPopup(menuId, ingredients);
       } else {
         _showSnackBar(data['message']);
       }
     } catch (e) {
       _showSnackBar("Error fetching ingredients: $e");
     }
+  }
+
+  void _showIngredientsPopup(int menuId, List<Map> ingredients) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setPopupState) {
+            Future<void> refreshIngredients() async {
+              try {
+                final response = await http.get(Uri.parse(
+                    "$apiBase/menu/get_menu_ingredients.php?menu_id=$menuId"));
+                final data = jsonDecode(response.body);
+                if (data['success']) {
+                  setPopupState(() {
+                    ingredients = List<Map>.from(data['data']);
+                  });
+                } else {
+                  _showSnackBar(data['message']);
+                }
+              } catch (e) {
+                _showSnackBar("Error fetching ingredients: $e");
+              }
+            }
+
+            return AlertDialog(
+              backgroundColor: const Color.fromARGB(255, 37, 37, 37),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              title: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    "Ingredients",
+                    style: TextStyle(
+                      color: Colors.orangeAccent,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.redAccent),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Container(
+                  width: MediaQuery.of(context).size.width * 0.7,
+                  child: DataTable(
+                    columnSpacing: 30,
+                    headingRowHeight: 50,
+                    dataRowHeight: 50,
+                    columns: const [
+                      DataColumn(
+                          label: Text("Raw Material",
+                              style: TextStyle(color: Colors.white))),
+                      DataColumn(
+                          label: Text("Quantity",
+                              style: TextStyle(color: Colors.white))),
+                      DataColumn(
+                          label:
+                              Text("Unit", style: TextStyle(color: Colors.white))),
+                      DataColumn(
+                          label: Text("Actions",
+                              style: TextStyle(color: Colors.white))),
+                    ],
+                    rows: ingredients.map((ingredient) {
+                      return DataRow(
+                        cells: [
+                          DataCell(Text(
+                            ingredient['name'] ?? "",
+                            style: const TextStyle(color: Colors.white70),
+                          )),
+                          DataCell(Text(
+                            ingredient['quantity']?.toString() ?? "",
+                            style: const TextStyle(color: Colors.white70),
+                          )),
+                          DataCell(Text(
+                            ingredient['unit']?.toString() ?? "",
+                            style: const TextStyle(color: Colors.white70),
+                          )),
+                          DataCell(
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              onPressed: () async {
+                                await onDeleteIngredient(
+                                    menuId, int.parse(ingredient['id'].toString()));
+                                await refreshIngredients();
+                              },
+                            ),
+                          ),
+                        ],
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton.icon(
+                  icon: const Icon(Icons.add, color: Colors.orange),
+                  label: const Text("Add Ingredient",
+                      style: TextStyle(color: Colors.orangeAccent)),
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    await onAddIngredient(menuId);
+                    await onViewIngredientsAndShow(menuId);
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> onAddIngredient(int menuId) async {
@@ -148,7 +251,6 @@ class _MenuManagementPageState extends State<MenuManagementPage> {
         );
         final data = jsonDecode(response.body);
         _showSnackBar(data['message']);
-        if (data['success']) fetchMenuIngredients(menuId);
       } catch (e) {
         _showSnackBar("Error adding ingredient: $e");
       }
@@ -164,7 +266,6 @@ class _MenuManagementPageState extends State<MenuManagementPage> {
       );
       final data = jsonDecode(response.body);
       _showSnackBar(data['message']);
-      if (data['success']) fetchMenuIngredients(menuId);
     } catch (e) {
       _showSnackBar("Error deleting ingredient: $e");
     }
@@ -184,12 +285,15 @@ class _MenuManagementPageState extends State<MenuManagementPage> {
 
   void _setApiBase() async {
     if (kIsWeb) {
-      apiBase = "http://localhost/SoftEng-2-Fire-and-Flavor-Pizza-Place-main/my_php_api";
+      apiBase =
+          "http://localhost/SoftEng-2-Fire-and-Flavor-Pizza-Place-main/my_php_api";
     } else if (Platform.isAndroid) {
-      apiBase = "http://10.0.2.2/SoftEng-2-Fire-and-Flavor-Pizza-Place-main/my_php_api";
+      apiBase =
+          "http://10.0.2.2/SoftEng-2-Fire-and-Flavor-Pizza-Place-main/my_php_api";
     } else {
       final ip = await _getHostIP();
-      apiBase = "http://${ip ?? '127.0.0.1'}/SoftEng-2-Fire-and-Flavor-Pizza-Place-main/my_php_api";
+      apiBase =
+          "http://${ip ?? '127.0.0.1'}/SoftEng-2-Fire-and-Flavor-Pizza-Place-main/my_php_api";
     }
     if (mounted) {
       await fetchMenuItems();
@@ -201,11 +305,8 @@ class _MenuManagementPageState extends State<MenuManagementPage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  void onSort<T>(
-    Comparable<T> Function(Map item) getField,
-    int columnIndex,
-    bool ascending,
-  ) {
+  void onSort<T>(Comparable<T> Function(Map item) getField, int columnIndex,
+      bool ascending) {
     setState(() {
       sortColumnIndex = columnIndex;
       sortAscending = ascending;
@@ -332,17 +433,16 @@ class _MenuManagementPageState extends State<MenuManagementPage> {
           (route) => false,
         );
       },
-      selectedMenuId: selectedMenuId,
-      selectedMenuIngredients: selectedMenuIngredients,
+      selectedMenuId: null,
+      selectedMenuIngredients: [],
       onAddIngredient: onAddIngredient,
       onDeleteIngredient: onDeleteIngredient,
-      onViewIngredients: onViewIngredients,
+      onViewIngredients: onViewIngredientsAndShow,
     );
   }
 }
 
 // ----------------- Dialogs -----------------
-
 class ProductFormDialog extends StatefulWidget {
   final Map? existingItem;
   const ProductFormDialog({super.key, this.existingItem});
@@ -367,20 +467,15 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   @override
   void initState() {
     super.initState();
-    nameController = TextEditingController(
-      text: widget.existingItem?['name']?.toString().trim() ?? '',
-    );
-    priceController = TextEditingController(
-      text: widget.existingItem?['price']?.toString().trim() ?? '',
-    );
-    descriptionController = TextEditingController(
-      text: widget.existingItem?['description']?.toString().trim() ?? '',
-    );
-    final existingCategory = widget.existingItem?['category']
-        ?.toString()
-        .trim();
-    selectedCategory =
-        (existingCategory != null && categoryOptions.contains(existingCategory))
+    nameController =
+        TextEditingController(text: widget.existingItem?['name']?.toString() ?? '');
+    priceController =
+        TextEditingController(text: widget.existingItem?['price']?.toString() ?? '');
+    descriptionController =
+        TextEditingController(text: widget.existingItem?['description']?.toString() ?? '');
+    final existingCategory = widget.existingItem?['category']?.toString();
+    selectedCategory = (existingCategory != null &&
+            categoryOptions.contains(existingCategory))
         ? existingCategory
         : categoryOptions[0];
   }
@@ -476,20 +571,14 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   ),
                 ),
                 items: categoryOptions
-                    .map(
-                      (cat) => DropdownMenuItem(
-                        value: cat,
-                        child: Text(
-                          cat,
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                      ),
-                    )
+                    .map((cat) => DropdownMenuItem(
+                          value: cat,
+                          child: Text(cat, style: const TextStyle(color: Colors.white)),
+                        ))
                     .toList(),
                 onChanged: (value) => setState(() => selectedCategory = value),
               ),
               const SizedBox(height: 20),
-              // ... (same TextFields and Dropdown as your code)
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -518,20 +607,14 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         if (widget.existingItem != null)
                           'id': widget.existingItem!['id'].toString(),
                         'name': nameController.text.trim(),
-                        'price':
-                            double.tryParse(
-                              priceController.text.trim(),
-                            )?.toString() ??
-                            '0',
+                        'price': double.tryParse(priceController.text.trim())?.toString() ?? '0',
                         'description': descriptionController.text.trim(),
                         'category': selectedCategory ?? categoryOptions[0],
                         'ingredients': '[]',
                         'image': '',
                       });
                     },
-                    child: Text(
-                      widget.existingItem == null ? "Save" : "Update",
-                    ),
+                    child: Text(widget.existingItem == null ? "Save" : "Update"),
                   ),
                 ],
               ),
@@ -598,10 +681,7 @@ class _IngredientFormDialogState extends State<IngredientFormDialog> {
               items: widget.rawMaterials.map<DropdownMenuItem<String>>((rm) {
                 return DropdownMenuItem(
                   value: rm['id'].toString(),
-                  child: Text(
-                    rm['name'],
-                    style: const TextStyle(color: Colors.white),
-                  ),
+                  child: Text(rm['name'], style: const TextStyle(color: Colors.white)),
                 );
               }).toList(),
               onChanged: (value) => setState(() => selectedRawMaterial = value),
