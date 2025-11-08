@@ -25,7 +25,20 @@ $addons = [
 ];
 
 // --- Query all addons ---
-$query = "SELECT * FROM addons_list ORDER BY category, subcategory, name";
+$query = "
+SELECT * FROM addons_list
+ORDER BY 
+    category,
+    CASE 
+        WHEN category = 'Size' AND name = 'Small' THEN 0 
+        WHEN category = 'Size' AND name = 'Medium' THEN 1
+        WHEN category = 'Size' AND name = 'Large' THEN 2
+        WHEN category = 'Size' AND name = 'Extra Large' THEN 3
+        WHEN category = 'Stuffed' AND name = 'None' THEN 0
+        ELSE 4
+    END,
+    name
+";
 $result = $conn->query($query);
 
 if ($result && $result->num_rows > 0) {

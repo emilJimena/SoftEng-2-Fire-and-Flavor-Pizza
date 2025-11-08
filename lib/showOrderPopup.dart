@@ -87,10 +87,11 @@ void showOrderPopup(
   String type = (item['type'] ?? item['category']?.toString().toLowerCase() ?? 'pizza').toString().toLowerCase();
 
   // --- Selected Options ---
-  String selectedSize = addons.sizes.keys.firstOrNull ?? '';
-  String selectedCrust = addons.crusts.keys.firstOrNull ?? '';
-  String selectedDip = addons.dips.keys.firstOrNull ?? '';
-  String selectedStuffed = addons.stuffed.keys.firstOrNull ?? '';
+String selectedSize = addons.sizes.containsKey("Medium") ? "Medium" : addons.sizes.keys.firstOrNull ?? '';
+String selectedCrust = addons.crusts.keys.firstOrNull ?? '';
+String selectedDip = addons.dips.keys.firstOrNull ?? '';
+String selectedStuffed = addons.stuffed.containsKey("None") ? "None" : addons.stuffed.keys.firstOrNull ?? '';
+
 
   List<String> selectedPizzaAddons = [];
   List<String> selectedPastaAddons = [];
