@@ -596,15 +596,22 @@ Future<void> _printSalesReport() async {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          "${startDate != null ? DateFormat('MMM d, yyyy').format(startDate!) : 'Select start date'}"
-                          " - "
-                          "${endDate != null ? DateFormat('MMM d, yyyy').format(endDate!) : 'Select end date'}",
-                          style: GoogleFonts.poppins(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black87,
-                          ),
-                        ),
+  startDate == null && endDate == null
+      ? DateFormat('MMM d, yyyy').format(DateTime.now()) // show today by default
+      : startDate != null && endDate != null
+          ? "${DateFormat('MMM d, yyyy').format(startDate!)} - ${DateFormat('MMM d, yyyy').format(endDate!)}"
+          : startDate != null
+              ? DateFormat('MMM d, yyyy').format(startDate!)
+              : endDate != null
+                  ? DateFormat('MMM d, yyyy').format(endDate!)
+                  : DateFormat('MMM d, yyyy').format(DateTime.now()),
+  style: GoogleFonts.poppins(
+    fontSize: 16,
+    fontWeight: FontWeight.w600,
+    color: Colors.black87,
+  ),
+),
+
                         const SizedBox(height: 10),
                         Row(
                           children: [

@@ -36,24 +36,30 @@ class SalesData {
     if (saveApiUrl.isEmpty) await _setApiUrls();
 
     final now = DateTime.now();
-    final newOrder = {
-      'orderName': 'Order ${orders.length + 1}',
-      'orderDate': '${_monthName(now.month)} ${now.day}, ${now.year}',
-      'orderTime':
-          '${now.hour > 12 ? now.hour - 12 : now.hour}:${now.minute.toString().padLeft(2, '0')} ${now.hour >= 12 ? "PM" : "AM"}',
-      'paymentMethod': paymentMethod, // 👈 include payment method
-      'items': cartItems.map((item) {
-        final price = (item['price'] ?? 0) * (item['quantity'] ?? 1);
-        return {
-          'menuItem': item['name'] ?? '',
-          'category': item['category'] ?? '',
-          'quantity': item['quantity'].toString(),
-          'size': item['size'] ?? '',
-          'price': price.toStringAsFixed(2),
-          'addons': List<String>.from(item['addons'] ?? []),
-        };
-      }).toList(),
+final todayStr = '${_monthName(now.month)} ${now.day}, ${now.year}';
+
+// Count existing orders for today
+final todayOrdersCount = orders.where((o) => o['orderDate'] == todayStr).length;
+
+final newOrder = {
+  'orderName': 'Order ${todayOrdersCount + 1}',
+  'orderDate': todayStr,
+  'orderTime':
+      '${now.hour > 12 ? now.hour - 12 : now.hour}:${now.minute.toString().padLeft(2, '0')} ${now.hour >= 12 ? "PM" : "AM"}',
+  'paymentMethod': paymentMethod,
+  'items': cartItems.map((item) {
+    final price = (item['price'] ?? 0) * (item['quantity'] ?? 1);
+    return {
+      'menuItem': item['name'] ?? '',
+      'category': item['category'] ?? '',
+      'quantity': item['quantity'].toString(),
+      'size': item['size'] ?? '',
+      'price': price.toStringAsFixed(2),
+      'addons': List<String>.from(item['addons'] ?? []),
     };
+  }).toList(),
+};
+
 
     orders.add(newOrder);
     await _saveSales();
