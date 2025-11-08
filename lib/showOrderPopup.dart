@@ -9,7 +9,7 @@ class Addons {
   final Map<String, double> crusts;
   final Map<String, double> dips;
   final Map<String, double> stuffed;
-  final Map<String, double> pizzaAddons;
+  final Map<String, double> toppings; // <-- renamed here
   final Map<String, Map<String, double>> pastaAddons;
   final Map<String, Map<String, double>> riceAddons;
 
@@ -18,7 +18,7 @@ class Addons {
     required this.crusts,
     required this.dips,
     required this.stuffed,
-    required this.pizzaAddons,
+    required this.toppings, // <-- renamed here
     required this.pastaAddons,
     required this.riceAddons,
   });
@@ -43,7 +43,7 @@ class Addons {
       crusts: toMap(json['crusts']),
       dips: toMap(json['dips']),
       stuffed: toMap(json['stuffed']),
-      pizzaAddons: toMap(json['pizzaAddons']),
+      toppings: toMap(json['toppings']), // <-- renamed here
       pastaAddons: toNestedMap(json['pastaAddons']),
       riceAddons: toNestedMap(json['riceAddons']),
     );
@@ -87,11 +87,10 @@ void showOrderPopup(
   String type = (item['type'] ?? item['category']?.toString().toLowerCase() ?? 'pizza').toString().toLowerCase();
 
   // --- Selected Options ---
-String selectedSize = addons.sizes.containsKey("Medium") ? "Medium" : addons.sizes.keys.firstOrNull ?? '';
-String selectedCrust = addons.crusts.keys.firstOrNull ?? '';
-String selectedDip = addons.dips.keys.firstOrNull ?? '';
-String selectedStuffed = addons.stuffed.containsKey("None") ? "None" : addons.stuffed.keys.firstOrNull ?? '';
-
+  String selectedSize = addons.sizes.containsKey("Medium") ? "Medium" : addons.sizes.keys.firstOrNull ?? '';
+  String selectedCrust = addons.crusts.keys.firstOrNull ?? '';
+  String selectedDip = addons.dips.keys.firstOrNull ?? '';
+  String selectedStuffed = addons.stuffed.containsKey("None") ? "None" : addons.stuffed.keys.firstOrNull ?? '';
 
   List<String> selectedPizzaAddons = [];
   List<String> selectedPastaAddons = [];
@@ -111,7 +110,7 @@ String selectedStuffed = addons.stuffed.containsKey("None") ? "None" : addons.st
       total += addons.dips[selectedDip] ?? 0.0;
       total += addons.stuffed[selectedStuffed] ?? 0.0;
       for (var addon in selectedPizzaAddons) {
-        total += addons.pizzaAddons[addon] ?? 0.0;
+        total += addons.toppings[addon] ?? 0.0; // <-- renamed here
       }
     } else {
       final selected = type == 'pasta' ? selectedPastaAddons : selectedRiceAddons;
@@ -153,7 +152,7 @@ String selectedStuffed = addons.stuffed.containsKey("None") ? "None" : addons.st
                   _buildRadioSection("Crust Type", addons.crusts, selectedCrust, (val) => setState(() => selectedCrust = val)),
                   _buildRadioSection("Side Dips", addons.dips, selectedDip, (val) => setState(() => selectedDip = val)),
                   _buildRadioSection("Stuffed Crust Option", addons.stuffed, selectedStuffed, (val) => setState(() => selectedStuffed = val)),
-                  _buildCheckboxSection("Pizza Addons", addons.pizzaAddons, selectedPizzaAddons, setState),
+                  _buildCheckboxSection("Toppings", addons.toppings, selectedPizzaAddons, setState), // <-- renamed here
                 ],
 
                 // --- Pasta / Rice Options ---
@@ -207,7 +206,7 @@ String selectedStuffed = addons.stuffed.containsKey("None") ? "None" : addons.st
                     crust: selectedCrust,
                     stuffed: selectedStuffed,
                     addons: selectedAddons,
-                    allAddons: addons, // Pass full addons object
+                    allAddons: addons,
                   ),
                 };
 
@@ -228,6 +227,9 @@ String selectedStuffed = addons.stuffed.containsKey("None") ? "None" : addons.st
     },
   );
 }
+
+// --- Helper Widgets and Deduction logic remain the same ---
+
 
 // --- Helper: Radio Section ---
 Widget _buildRadioSection(String title, Map<String, double> options, String groupValue, ValueChanged<String> onChanged) {
@@ -335,7 +337,7 @@ Map<String, double> computeIngredientDeduction(
   if (addons != null && allAddons != null) {
     Map<String, double> addonPrices = {};
 
-    if (type == 'pizza') addonPrices = allAddons.pizzaAddons;
+    if (type == 'pizza') addonPrices = allAddons.toppings;
     if (type == 'pasta') allAddons.pastaAddons.forEach((_, map) => addonPrices.addAll(map));
     if (type == 'rice') allAddons.riceAddons.forEach((_, map) => addonPrices.addAll(map));
 

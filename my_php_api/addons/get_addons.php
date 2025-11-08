@@ -16,25 +16,32 @@ $addons = [
     "crusts" => [],
     "dips" => [],
     "stuffed" => [],
-    "pizzaAddons" => [],
+    "toppings" => [],
     "pastaAddons" => [],
     "riceAddons" => []
 ];
 
-// --- Keep your ordering query ---
+// --- SQL with proper ordering ---
 $query = "
 SELECT * FROM addons_list
 ORDER BY 
-    category,
+    subcategory,
     CASE 
-        -- Sizes ordered Small → Extra Large
+        -- Sizes order: Small → Extra Large
         WHEN subcategory = 'Sizes' AND name = 'Small' THEN 0
         WHEN subcategory = 'Sizes' AND name = 'Medium' THEN 1
         WHEN subcategory = 'Sizes' AND name = 'Large' THEN 2
         WHEN subcategory = 'Sizes' AND name = 'Extra Large' THEN 3
-        -- Stuffed Crust Option: None first
+
+        -- Stuffed Crust: None first
         WHEN subcategory = 'Stuffed Crust Option' AND name = 'None' THEN 0
-        ELSE 4
+        WHEN subcategory = 'Stuffed Crust Option' AND name = 'Cheese burst' THEN 1
+        WHEN subcategory = 'Stuffed Crust Option' AND name = 'Cheddar stuffed' THEN 2
+        WHEN subcategory = 'Stuffed Crust Option' AND name = 'Mozzarella stuffed' THEN 3
+        WHEN subcategory = 'Stuffed Crust Option' AND name = 'Spinach & cheese stuffed' THEN 4
+        WHEN subcategory = 'Stuffed Crust Option' AND name = 'Garlic butter stuffed' THEN 5
+
+        ELSE 99
     END,
     name
 ";
@@ -48,7 +55,6 @@ if ($result && $result->num_rows > 0) {
         $price = floatval($row['price'] ?? 0);
         $category = $row['category'] ?? '';
 
-        // Map based on subcategory
         switch ($subcategory) {
             case 'Sizes':
                 $addons['sizes'][$name] = $price;
@@ -62,13 +68,12 @@ if ($result && $result->num_rows > 0) {
             case 'Stuffed Crust Option':
                 $addons['stuffed'][$name] = $price;
                 break;
-            case 'Pizza Addons':
-                $addons['pizzaAddons'][$name] = $price;
+            case 'Toppings':
+                $addons['toppings'][$name] = $price;
                 break;
             case 'Cheese Addons':
             case 'Sauce & Flavor Addons':
             case 'Side Addons':
-                // For pasta/rice, group by subcategory
                 if (stripos($category, 'pasta') !== false) {
                     if (!isset($addons['pastaAddons'][$subcategory])) $addons['pastaAddons'][$subcategory] = [];
                     $addons['pastaAddons'][$subcategory][$name] = $price;
