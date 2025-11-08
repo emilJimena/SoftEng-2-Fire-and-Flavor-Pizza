@@ -13,15 +13,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 // --- Include database connection ---
 include("../db.php");
 
-// --- Initialize structured response ---
+// --- Initialize structured response with arrays ---
 $addons = [
-    "sizes" => new stdClass(),
-    "crusts" => new stdClass(),
-    "dips" => new stdClass(),
-    "stuffed" => new stdClass(),
-    "pizzaAddons" => new stdClass(),
-    "pastaAddons" => new stdClass(),
-    "riceAddons" => new stdClass()
+    "sizes" => [],
+    "crusts" => [],
+    "dips" => [],
+    "stuffed" => [],
+    "pizzaAddons" => [],
+    "pastaAddons" => [],
+    "riceAddons" => []
 ];
 
 // --- Query all addons ---
@@ -30,47 +30,47 @@ $result = $conn->query($query);
 
 if ($result && $result->num_rows > 0) {
     while ($row = $result->fetch_assoc()) {
-        $category = $row['category'];
+        $category = $row['category'] ?? '';
         $subcategory = $row['subcategory'] ?? '';
-        $name = $row['name'];
-        $price = floatval($row['price']);
+        $name = $row['name'] ?? '';
+        $price = floatval($row['price'] ?? 0);
 
         switch ($category) {
             case 'Size':
-                $addons['sizes']->{$name} = $price;
+                $addons['sizes'][$name] = $price;
                 break;
 
             case 'Crust':
-                $addons['crusts']->{$name} = $price;
+                $addons['crusts'][$name] = $price;
                 break;
 
             case 'Dip':
-                $addons['dips']->{$name} = $price;
+                $addons['dips'][$name] = $price;
                 break;
 
             case 'Stuffed':
-                $addons['stuffed']->{$name} = $price;
+                $addons['stuffed'][$name] = $price;
                 break;
 
             case 'Pizza Addons':
-                $addons['pizzaAddons']->{$name} = $price;
+                $addons['pizzaAddons'][$name] = $price;
                 break;
 
             case 'Pasta Addons':
                 if ($subcategory) {
-                    if (!isset($addons['pastaAddons']->{$subcategory})) {
-                        $addons['pastaAddons']->{$subcategory} = new stdClass();
+                    if (!isset($addons['pastaAddons'][$subcategory])) {
+                        $addons['pastaAddons'][$subcategory] = [];
                     }
-                    $addons['pastaAddons']->{$subcategory}->{$name} = $price;
+                    $addons['pastaAddons'][$subcategory][$name] = $price;
                 }
                 break;
 
             case 'Rice Addons':
                 if ($subcategory) {
-                    if (!isset($addons['riceAddons']->{$subcategory})) {
-                        $addons['riceAddons']->{$subcategory} = new stdClass();
+                    if (!isset($addons['riceAddons'][$subcategory])) {
+                        $addons['riceAddons'][$subcategory] = [];
                     }
-                    $addons['riceAddons']->{$subcategory}->{$name} = $price;
+                    $addons['riceAddons'][$subcategory][$name] = $price;
                 }
                 break;
         }
