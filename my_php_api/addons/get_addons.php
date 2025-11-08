@@ -1,5 +1,4 @@
 <?php
-// --- Response headers (CORS + JSON) ---
 header("Content-Type: application/json");
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
@@ -10,10 +9,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
-// --- Include database connection ---
 include("../db.php");
 
-// --- Initialize structured response with arrays ---
 $addons = [
     "sizes" => [],
     "crusts" => [],
@@ -24,65 +21,60 @@ $addons = [
     "riceAddons" => []
 ];
 
-// --- Query all addons ---
+// --- Keep your ordering query ---
 $query = "
 SELECT * FROM addons_list
 ORDER BY 
     category,
     CASE 
-        WHEN category = 'Size' AND name = 'Small' THEN 0 
-        WHEN category = 'Size' AND name = 'Medium' THEN 1
-        WHEN category = 'Size' AND name = 'Large' THEN 2
-        WHEN category = 'Size' AND name = 'Extra Large' THEN 3
-        WHEN category = 'Stuffed' AND name = 'None' THEN 0
+        -- Sizes ordered Small → Extra Large
+        WHEN subcategory = 'Sizes' AND name = 'Small' THEN 0
+        WHEN subcategory = 'Sizes' AND name = 'Medium' THEN 1
+        WHEN subcategory = 'Sizes' AND name = 'Large' THEN 2
+        WHEN subcategory = 'Sizes' AND name = 'Extra Large' THEN 3
+        -- Stuffed Crust Option: None first
+        WHEN subcategory = 'Stuffed Crust Option' AND name = 'None' THEN 0
         ELSE 4
     END,
     name
 ";
+
 $result = $conn->query($query);
 
 if ($result && $result->num_rows > 0) {
     while ($row = $result->fetch_assoc()) {
-        $category = $row['category'] ?? '';
         $subcategory = $row['subcategory'] ?? '';
         $name = $row['name'] ?? '';
         $price = floatval($row['price'] ?? 0);
+        $category = $row['category'] ?? '';
 
-        switch ($category) {
-            case 'Size':
+        // Map based on subcategory
+        switch ($subcategory) {
+            case 'Sizes':
                 $addons['sizes'][$name] = $price;
                 break;
-
-            case 'Crust':
+            case 'Crust Type':
                 $addons['crusts'][$name] = $price;
                 break;
-
-            case 'Dip':
+            case 'Side Dips':
                 $addons['dips'][$name] = $price;
                 break;
-
-            case 'Stuffed':
+            case 'Stuffed Crust Option':
                 $addons['stuffed'][$name] = $price;
                 break;
-
             case 'Pizza Addons':
                 $addons['pizzaAddons'][$name] = $price;
                 break;
-
-            case 'Pasta Addons':
-                if ($subcategory) {
-                    if (!isset($addons['pastaAddons'][$subcategory])) {
-                        $addons['pastaAddons'][$subcategory] = [];
-                    }
+            case 'Cheese Addons':
+            case 'Sauce & Flavor Addons':
+            case 'Side Addons':
+                // For pasta/rice, group by subcategory
+                if (stripos($category, 'pasta') !== false) {
+                    if (!isset($addons['pastaAddons'][$subcategory])) $addons['pastaAddons'][$subcategory] = [];
                     $addons['pastaAddons'][$subcategory][$name] = $price;
                 }
-                break;
-
-            case 'Rice Addons':
-                if ($subcategory) {
-                    if (!isset($addons['riceAddons'][$subcategory])) {
-                        $addons['riceAddons'][$subcategory] = [];
-                    }
+                if (stripos($category, 'rice') !== false) {
+                    if (!isset($addons['riceAddons'][$subcategory])) $addons['riceAddons'][$subcategory] = [];
                     $addons['riceAddons'][$subcategory][$name] = $price;
                 }
                 break;
@@ -90,10 +82,7 @@ if ($result && $result->num_rows > 0) {
     }
 }
 
-// --- Output final structured JSON ---
 echo json_encode($addons, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
-
-// --- Close database connection ---
 $conn->close();
 exit();
 ?>

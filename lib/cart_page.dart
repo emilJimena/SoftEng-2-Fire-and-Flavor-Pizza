@@ -81,9 +81,9 @@ class _CartPageState extends State<CartPage> {
   String? selectedPaymentMethod;
 
   double get subtotal => widget.cartItems.fold(
-    0,
-    (sum, item) => sum + (item['price'] * (item['quantity'] ?? 1)),
-  );
+        0,
+        (sum, item) => sum + (item['price'] * (item['quantity'] ?? 1)),
+      );
 
   void _increaseQty(int index) {
     setState(() => widget.cartItems[index]['quantity']++);
@@ -117,11 +117,11 @@ class _CartPageState extends State<CartPage> {
     return 0;
   }
 
+  /// ✅ Updated checkout function to handle all customizations
   void _checkout() async {
     if (widget.cartItems.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Your cart is empty.")));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text("Your cart is empty.")));
       return;
     }
 
@@ -134,7 +134,6 @@ class _CartPageState extends State<CartPage> {
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      // ✅ Fetch user ID from either 'user_id' or fallback to 'id'
       final userId = prefs.getString('user_id') ?? prefs.getString('id');
 
       if (userId == null) {
@@ -144,7 +143,7 @@ class _CartPageState extends State<CartPage> {
         return;
       }
 
-      // 1️⃣ Prepare main ingredient deductions
+      // 1️⃣ Main ingredient deductions
       List<Map<String, dynamic>> mainIngredientDeductions = [];
 
       for (var item in widget.cartItems) {
@@ -176,38 +175,73 @@ class _CartPageState extends State<CartPage> {
       }
 
       if (mainIngredientDeductions.isNotEmpty) {
-        final mainRes = await deductMainIngredients(
-          widget.apiBase,
-          mainIngredientDeductions,
-        );
+        final mainRes =
+            await deductMainIngredients(widget.apiBase, mainIngredientDeductions);
 
         if (mainRes['success'] != true) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(
-                "Main ingredient deduction failed: ${mainRes['message']}",
-              ),
+              content:
+                  Text("Main ingredient deduction failed: ${mainRes['message']}"),
             ),
           );
           return;
         }
       }
 
-      // 2️⃣ Prepare add-on deductions
+      // 2️⃣ Add-on / customization deductions
       List<String> addonNames = [];
       List<double> addonAmounts = [];
 
       for (var item in widget.cartItems) {
         final menuQty = parseInt(item['quantity']);
+
+        // 2a. Deduction map
         final deductions = item['deduction'] ?? {};
         if (deductions is Map) {
-          for (var entry in deductions.entries) {
-            final name = entry.key.toString();
-            final amt = parseDouble(entry.value);
-            if (amt <= 0) continue;
-
-            addonNames.add(name);
+          deductions.forEach((key, value) {
+            final amt = parseDouble(value);
+            if (amt <= 0) return;
+            addonNames.add(key.toString());
             addonAmounts.add(amt * menuQty);
+          });
+        }
+
+        // 2b. Addons list
+        final addons = item['addons'] ?? [];
+        if (addons is List) {
+          for (var addon in addons) {
+            if (addon is Map) {
+              addon.forEach((key, value) {
+                final amt = parseDouble(value);
+                if (amt <= 0) return;
+                addonNames.add(key.toString());
+                addonAmounts.add(amt * menuQty);
+              });
+            } else {
+              addonNames.add(addon.toString());
+              addonAmounts.add(1.0 * menuQty);
+            }
+          }
+        }
+
+        // 2c. Crust type
+        if (item['crust'] != null) {
+          addonNames.add(item['crust'].toString());
+          addonAmounts.add(1.0 * menuQty);
+        }
+
+        // 2d. Stuffed crust
+        if (item['stuffed'] != null) {
+          addonNames.add(item['stuffed'].toString());
+          addonAmounts.add(1.0 * menuQty);
+        }
+
+        // 2e. Side dips
+        if (item['dips'] != null && item['dips'] is List) {
+          for (var dip in item['dips']) {
+            addonNames.add(dip.toString());
+            addonAmounts.add(1.0 * menuQty);
           }
         }
       }
@@ -220,22 +254,20 @@ class _CartPageState extends State<CartPage> {
             "name": addonNames,
             "amount": addonAmounts,
             "user_id": userId,
-            "reason": "Checkout deduction (add-ons)",
+            "reason": "Checkout deduction (add-ons/customizations)",
           }),
         );
 
         final data = jsonDecode(res.body);
         if (data['success'] != true) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text("Add-on deduction failed: ${data['message']}"),
-            ),
+            SnackBar(content: Text("Add-on deduction failed: ${data['message']}")),
           );
           return;
         }
       }
 
-      // 3️⃣ Record order with payment method
+      // 3️⃣ Record order
       await SalesData().addOrder(
         List<Map<String, dynamic>>.from(widget.cartItems),
         paymentMethod: selectedPaymentMethod!,
@@ -249,7 +281,7 @@ class _CartPageState extends State<CartPage> {
         ),
       );
 
-      // Clear cart and reset
+      // Clear cart
       setState(() {
         widget.cartItems.clear();
         selectedPaymentMethod = null;
@@ -257,9 +289,8 @@ class _CartPageState extends State<CartPage> {
 
       widget.onClose();
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Error during checkout: $e")));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Error during checkout: $e")));
     }
   }
 
@@ -310,7 +341,6 @@ class _CartPageState extends State<CartPage> {
               padding: const EdgeInsets.all(12.0),
               child: Column(
                 children: [
-                  // Payment Method
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
@@ -331,8 +361,6 @@ class _CartPageState extends State<CartPage> {
                     ],
                   ),
                   const SizedBox(height: 16),
-
-                  // Subtotal
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -418,93 +446,112 @@ class _CartPageState extends State<CartPage> {
     );
   }
 
-  List<Widget> _buildCartGroupedByCategory() {
-    Map<String, List<Map<String, dynamic>>> grouped = {};
-    for (var item in widget.cartItems) {
-      final category = item['category'] ?? 'Others';
-      grouped.putIfAbsent(category, () => []);
-      grouped[category]!.add(item);
-    }
+ List<Widget> _buildCartGroupedByCategory() {
+  Map<String, List<Map<String, dynamic>>> grouped = {};
+  for (var item in widget.cartItems) {
+    final category = item['category'] ?? 'Others';
+    grouped.putIfAbsent(category, () => []);
+    grouped[category]!.add(item);
+  }
 
-    List<Widget> widgets = [];
+  List<Widget> widgets = [];
 
-    grouped.forEach((category, items) {
-      widgets.add(
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-          child: Text(
-            category,
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.orange,
-            ),
+  grouped.forEach((category, items) {
+    // Category header
+    widgets.add(
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+        child: Text(
+          category,
+          style: GoogleFonts.poppins(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Colors.orange,
           ),
         ),
-      );
+      ),
+    );
 
-      for (var item in items) {
-        widgets.add(
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            child: Card(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              elevation: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item['category'] ?? 'Others',
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.orange,
+    // Items under category
+    for (var item in items) {
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            elevation: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item['category'] ?? 'Others',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.orange,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    item['name'] ?? '',
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (item['size'] != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4.0),
+                      child: Text(
+                        "Size: ${item['size']}",
+                        style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[800],
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      item['name'] ?? '',
-                      style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (item['size'] != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4.0),
-                        child: Text(
-                          "Size: ${item['size']}",
+                  if ((item['addons'] != null && (item['addons'] as List).isNotEmpty) ||
+                      item['crust'] != null ||
+                      item['stuffed'] != null ||
+                      (item['dips'] != null && (item['dips'] as List).isNotEmpty))
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Addons:",
                           style: GoogleFonts.poppins(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
                             color: Colors.grey[800],
                           ),
                         ),
-                      ),
-                    if (item['addons'] != null &&
-                        (item['addons'] as List).isNotEmpty)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "Addons:",
-                            style: GoogleFonts.poppins(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey[800],
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          ...((item['addons'] as List).map(
-                            (addon) => Padding(
-                              padding: const EdgeInsets.only(
-                                left: 8.0,
-                                bottom: 2,
-                              ),
+                        const SizedBox(height: 4),
+                        // Display addons list
+                        ...((item['addons'] ?? []).map((addon) {
+                          if (addon is Map) {
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: addon.entries.map((e) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(left: 8.0, bottom: 2),
+                                  child: Text(
+                                    "- ${e.key} x${e.value}",
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 13,
+                                      color: Colors.grey[700],
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            );
+                          } else {
+                            return Padding(
+                              padding: const EdgeInsets.only(left: 8.0, bottom: 2),
                               child: Text(
                                 "- $addon",
                                 style: GoogleFonts.poppins(
@@ -512,74 +559,109 @@ class _CartPageState extends State<CartPage> {
                                   color: Colors.grey[700],
                                 ),
                               ),
-                            ),
-                          )),
-                        ],
-                      ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            _quantityButton(
-                              Icons.remove,
-                              () =>
-                                  _decreaseQty(widget.cartItems.indexOf(item)),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
+                            );
+                          }
+                        }).toList()),
+                        if (item['crust'] != null)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8.0, bottom: 2),
+                            child: Text(
+                              "- ${item['crust']}",
+                              style: GoogleFonts.poppins(
+                                fontSize: 13,
+                                color: Colors.grey[700],
                               ),
+                            ),
+                          ),
+                        if (item['stuffed'] != null)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8.0, bottom: 2),
+                            child: Text(
+                              "- ${item['stuffed']}",
+                              style: GoogleFonts.poppins(
+                                fontSize: 13,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                          ),
+                        if (item['dips'] != null && (item['dips'] as List).isNotEmpty)
+                          ...((item['dips'] as List).map((dip) {
+                            return Padding(
+                              padding: const EdgeInsets.only(left: 8.0, bottom: 2),
                               child: Text(
-                                "${item['quantity']}",
+                                "- $dip",
                                 style: GoogleFonts.poppins(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                  color: Colors.grey[700],
                                 ),
                               ),
-                            ),
-                            _quantityButton(
-                              Icons.add,
-                              () =>
-                                  _increaseQty(widget.cartItems.indexOf(item)),
-                            ),
-                          ],
-                        ),
-                        Text(
-                          "₱${(item['price'] * item['quantity']).toStringAsFixed(2)}",
-                          style: GoogleFonts.poppins(
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black87,
-                          ),
-                        ),
-                        Container(
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFFFCDD2),
-                            shape: BoxShape.circle,
-                          ),
-                          child: IconButton(
-                            icon: const Icon(
-                              Icons.delete,
-                              color: Colors.redAccent,
-                            ),
-                            onPressed: () =>
-                                _removeItem(widget.cartItems.indexOf(item)),
-                          ),
-                        ),
+                            );
+                          }).toList()),
                       ],
                     ),
-                  ],
-                ),
+                  const SizedBox(height: 8),
+                  // Quantity & price row
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          _quantityButton(
+                            Icons.remove,
+                            () => _decreaseQty(widget.cartItems.indexOf(item)),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Text(
+                              "${item['quantity']}",
+                              style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          _quantityButton(
+                            Icons.add,
+                            () => _increaseQty(widget.cartItems.indexOf(item)),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        "₱${(item['price'] * item['quantity']).toStringAsFixed(2)}",
+                        style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      Container(
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFFFCDD2),
+                          shape: BoxShape.circle,
+                        ),
+                        child: IconButton(
+                          icon: const Icon(
+                            Icons.delete,
+                            color: Colors.redAccent,
+                          ),
+                          onPressed: () => _removeItem(widget.cartItems.indexOf(item)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
           ),
-        );
-      }
-    });
+        ),
+      );
+    }
+  });
 
-    return widgets;
-  }
+
+  return widgets;
+}
+
+
 
   Widget _quantityButton(IconData icon, VoidCallback onPressed) {
     return Container(
